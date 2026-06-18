@@ -32,8 +32,20 @@ export default function Home() {
     };
   }
 
+  function validateCcn(value: string): string | null {
+    if (!value.trim()) return "Please enter a CCN.";
+    if (value.trim().length !== 6) return "CCN must be exactly 6 characters.";
+    if (!/^[a-zA-Z0-9]{6}$/.test(value.trim())) return "CCN can only contain letters and numbers.";
+    return null;
+  }
+
   async function handleLookup() {
-    if (!ccn.trim()) return;
+    const validationError = validateCcn(ccn);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setFacility(null);
@@ -43,16 +55,29 @@ export default function Home() {
       const json = await res.json();
 
       if (!res.ok) {
-        setError(json.error || "Lookup failed");
+        setError(json.error || "Lookup failed. Please try again.");
+        return;
+      }
+
+      if (!json.providerName) {
+        setError("Data returned but facility name is missing. The CCN may be inactive.");
         return;
       }
 
       setFacility(json as FacilityData);
     } catch (err: any) {
-      setError(err.message || "Network error");
+      if (err.name === "TypeError" && err.message.includes("fetch")) {
+        setError("Network error. Please check your connection and try again.");
+      } else {
+        setError(err.message || "An unexpected error occurred.");
+      }
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter") handleLookup();
   }
 
   function handleDownloadPdf() {
@@ -88,19 +113,40 @@ export default function Home() {
             type="text"
             maxLength={6}
             value={ccn}
-            onChange={(e) => setCcn(e.target.value)}
+            onChange={(e) => {
+              setCcn(e.target.value);
+              if (error) setError(null);
+            }}
+            onKeyDown={handleKeyDown}
             placeholder="e.g. 686123"
-            className="flex-1 border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-400 outline-none"
+            className={`flex-1 border rounded-md px-3 py-2 text-sm outline-none transition ${
+              error
+                ? "border-red-400 focus:ring-2 focus:ring-red-300"
+                : "border-gray-300 focus:ring-2 focus:ring-yellow-400"
+            }`}
           />
           <button
             onClick={handleLookup}
             disabled={loading || !ccn.trim()}
             className="bg-[#1a1a3e] text-white px-5 py-2 rounded-md text-sm font-medium hover:bg-[#2a2a5e] disabled:opacity-50 transition"
           >
-            {loading ? "Looking up\u2026" : "Fetch"}
+            {loading ? "Fetching\u2026" : "Fetch"}
           </button>
         </div>
-        {error && <p className="text-red-600 text-sm mt-2">{error}</p>}
+
+        {error && (
+          <div className="mt-3 bg-red-50 border border-red-200 rounded-md px-4 py-3">
+            <p className="text-red-700 text-sm">{error}</p>
+          </div>
+        )}
+
+        {loading && (
+          <div className="mt-3 bg-blue-50 border border-blue-200 rounded-md px-4 py-3">
+            <p className="text-blue-700 text-sm">
+              Querying CMS databases\u2026 This may take a few seconds.
+            </p>
+          </div>
+        )}
       </section>
 
       {facility && (
@@ -139,6 +185,14 @@ export default function Home() {
                   <Detail label="LT Natl Avg ED" value={facility.claims.ltNatlAvgEd} />
                   <Detail label="LT State Avg ED" value={facility.claims.ltStateAvgEd} />
                 </div>
+              </div>
+            )}
+
+            {!facility.claims && (
+              <div className="mt-4 pt-4 border-t">
+                <p className="text-sm text-amber-600">
+                  Claims-based metrics are not available for this facility.
+                </p>
               </div>
             )}
           </section>
